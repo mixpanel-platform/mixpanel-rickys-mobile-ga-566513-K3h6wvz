@@ -143,7 +143,7 @@
 <script type="text/cq" id="groupby_query">
 function main() {
     return Events({})
-    .filter(function(event) { return event["name"] == "$signup"; })
+    .filter(function(event) { return event["name"] == "Game Played"; })
     .groupBy(['mp_country_code'], function(accumulators, items) {
         var ret = items.length;
         for (var i = 0; i < accumulators.length; ++i) {
@@ -279,7 +279,7 @@ function mergeInPlace(d1, d2) {
 
 <script type="text/cq" id="flow_params">
 {
-    "first_event": "homepage new",
+    "first_event": "App Open",
     "max_depth": 4
 }
 </script>

@@ -1,15 +1,289 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <meta charset="utf-8">
     <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/css/reset.css">
     <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.css">
-    <script src="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.js"></script>
-  </head>
-  <body class="mixpanel-platform-body">
-    <h1>Hello, World!</h1>
-    <script>
-      // Run queries and display results here
-    </script>
-  </body>
+    <script src="mixpanel-platform.min.js"></script>
+    <script src="ace/ace.js" type="text/javascript" charset="utf-8"></script>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="stylesheet" type="text/css" href="tooltips.css">
+</head>
+
+<body class="mixpanel-platform-body">
+
+<div id="wrapper">
+<div id="editor_wrapper">
+
+    <div id="report_selector_menu">
+        <strong>Example queries:</strong><div id="reports_dropdown"></div>
+    </div>
+    <a href="https://docs.google.com/document/d/1nYOUxdPrMXmiKMwMksXIZknCbxjFFHi9n8iS0q37Ivs/edit#heading=h.dfzdd27m7eqs" id="docs" target="_blank">Documentation</a>
+
+    <div id="editor">
+</div> <!-- weird formatting required for default code to look good -->
+
+    <div id="controls">
+        <table id="params_table">
+            <tr>
+                <th>
+                    Dates to query: <a href="#" data-tooltip="This controls the `from_date` and `to_date` api parameters. We will only read data between these dates (inclusive)"><img src="question_mark.png" class="tooltip_questionmark" /></a>
+                </th>
+                <td><div id="dates"></div></td>
+            </tr>
+            <tr>
+                <th>Script params: <a href="#" data-tooltip="This is a global variable `params` that will be available to your script. This lets your scripts be flexible. For example, if you were writing Segmentation, you might add an 'event_name' parameter and filter for `if (event.name == params.event_name)` to your script."><img src="question_mark.png" class="tooltip_questionmark" /></a></th>
+                <td><textarea type="text" id="script_params" rows="5" columns="40"></textarea></td>
+            </tr>
+        </table>
+        <button id="run_button">Run query</button>
+        <div style="clear: both"></div>
+    </div>
+</div>
+
+<br />
+
+<div id="output"></div>
+</div>
+
+<script>
+    $(document).ready(function() {
+        var editor = ace.edit("editor");
+        editor.setTheme("ace/theme/textmate");
+        editor.getSession().setMode("ace/mode/javascript");
+        editor.setOptions({
+            maxLines: 20
+        });
+
+        $("#dates").MPDatepicker();
+        $("#dates").on('change', function(e, dates){
+            var params = JSON.parse($("#script_params").val());
+            params.from_date = dates.from;
+            params.to_date = dates.to;
+
+            var params_string = JSON.stringify(params, null, '  ');
+            $("#script_params").val(params_string);
+        })
+
+        var set_editor_contents = function(query_name) {
+            var script = $("#" + query_name + "_query").html();
+            var params = JSON.parse($("#" + query_name + "_params").html());
+
+            editor.setValue($.trim(script), -1);
+            var params_string = JSON.stringify(params, null, '  ');
+            $("#script_params").val(params_string);
+            //$("#script_params").css('width', params_string.length * 8.3);
+
+            $("#output").html('').css('visibility', 'hidden');
+        };
+
+        set_editor_contents("groupby");
+
+        $("#reports_dropdown").MPSelect({
+            items: [
+                { 'value': 'groupby', 'label': 'Simple groupBy' },
+                { 'value': 'top_email_providers', 'label': 'Top email providers' },
+                { 'value': 'max_pixels', 'label': 'Max pixels' },
+                { 'value': 'map_exception', 'label': 'map() exception' },
+                { 'value': 'flow', 'label': 'Flow' }
+            ]
+        });
+
+        $("#reports_dropdown").change(function(e, val) {
+            set_editor_contents(val);
+        });
+
+        function date_to_string(d) {
+            return d.toISOString().split('T')[0];
+        }
+
+        function set_output(formatted) {
+            $("#output").html(
+                $("<pre>").html(formatted)
+            );
+        }
+
+        $("#run_button").on('click', function() {
+            // Show spinner while running query
+            $("#output").html(
+                $("<div class='spinner_wrapper'>").append(
+                    $("<img src='ajax-loader-big.gif' />")
+                )
+            );
+            $("#output").css('visibility', 'visible');
+
+            // Make query
+            var dates = $("#dates").val();
+            var params = {
+                "from_date": date_to_string(dates.from),
+                "to_date": date_to_string(dates.to),
+                "params": $("#script_params").val()
+            };
+            console.log(params)
+            MP.api.custom_query(editor.getValue(), params)
+                .done(function(resp) {
+                    var stringified = JSON.stringify(resp, undefined, 2);
+                    set_output(stringified);
+                })
+                .fail(function($xhr) {
+                    // Somehow the request is not parsed into JSON event with application/json header
+                    var error = $xhr.request.responseText;
+                    var error_text = "Requst failed";
+                    try {
+                        error_text = JSON.parse(error).error;
+                    } catch (err) { 
+                        error_text = $xhr.request.responseText;
+                    }
+                    set_output(error_text);
+                });
+        });
+    });
+</script>
+
+<script type="text/cq" id="groupby_query">
+function main() {
+    return Events({})
+    .filter(function(event) { return event["name"] == "$signup"; })
+    .groupBy(['mp_country_code'], function(accumulators, items) {
+        var ret = items.length;
+        for (var i = 0; i < accumulators.length; ++i) {
+            ret += accumulators[i];
+        }
+        return ret;
+    });
+}
+</script>
+<script type="text/cq" id="groupby_params">
+{}
+</script>
+
+<script type="text/cq" id="top_email_providers_query">
+function main() {
+    return Events({})
+        .groupBy([function(event) {
+                email = event["Email"];
+                if (!email) return undefined;
+                pos = email.indexOf('@');
+                if (pos < 0) return undefined;
+                return email.substr(pos + 1);
+            }],
+            function(accumulators, items) {
+                var ret = items.length;
+                for (var i = 0; i < accumulators.length; ++i) {
+                    ret += accumulators[i];
+                }
+                return ret;
+            })
+        .reduce(function(accumulators, items) {
+            var ret = items;
+            for (var i = 0; i < accumulators.length; ++i) {
+                ret = ret.concat(accumulators[i]);
+            }
+            ret.sort(function(a,b) { return b.value - a.value; });
+            return ret.slice(0, 10);
+        });
+}
+</script>
+<script type="text/cq" id="top_email_providers_params">
+{}
+</script>
+
+<script type="text/cq" id="max_pixels_query">
+function main() {
+    return Events({}).reduce(
+        function(accumulators, events) {
+            var ret = { height : 0, width: 0, total: 0};
+            for (var i = 0; i < accumulators.length; ++i) {
+                if (accumulators[i].total > ret.total) {
+                    ret = accumulators[i];
+                }
+            }
+            for (var i = 0; i < events.length; ++i) {
+                var w = events[i]["$screen_width"];
+                var h = events[i]["$screen_height"];
+                if (w * h > ret.total) {
+                    ret = { height : h, width : w, total : w * h};
+                }
+            }
+            return ret;
+        });
+}
+</script>
+<script type="text/cq" id="max_pixels_params">
+{}
+</script>
+
+<script type="text/cq" id="map_exception_query">
+function main() {
+    return Events({}).map(function(item) { throw "Hello!"; });
+}
+</script>
+<script type="text/cq" id="map_exception_params">
+{
+</script>
+
+<script type="text/cq" id="flow_query">
+var main = function() {
+    return Events({})
+    .groupByUser(function(flow, events) {
+        flow = flow || { depth: 0 };
+        flow.current = flow.current || flow;
+        for (var i = 0; i < events.length; i++) {
+            var e = events[i];
+            if (flow.depth === 0 && e.name != params.first_event) {
+                continue;
+            }
+            if (flow.depth === params.max_depth) {
+                return flow;
+            }
+            flow.depth++;
+            flow.current[e.name] =
+                flow.current[e.name] || {'count': 0, 'next': {}};
+
+            flow.current[e.name].count++;
+            flow.current = flow.current[e.name].next;
+        }
+        return flow;
+    })
+    .reduce(function(accumulators, items) {
+        var result = {};
+        for (var i = 0; i < accumulators.length; i++) {
+            mergeInPlace(result, accumulators[i]);
+        }
+        for (var i = 0; i < items.length; i++) {
+            delete items[i].value.depth;
+            delete items[i].value.current;
+            mergeInPlace(result, items[i].value);
+        }
+        return result;
+    });
+};
+
+function mergeInPlace(d1, d2) {
+    for (var key in d2) {
+        var v1 = d1[key],
+            v2 = d2[key];
+
+        if (!(key in d1)) {
+            d1[key] = v2;
+        } else if (typeof v1 === "number" && typeof v2 === "number") {
+            d1[key] += v2;
+        } else if (typeof v1 === "object" && typeof v2 === "object") {
+            mergeInPlace(v1, v2);
+        } else {
+            throw "mismatched types for key: " + key;
+        }
+    }
+}
+</script>
+
+<script type="text/cq" id="flow_params">
+{
+    "first_event": "homepage new",
+    "max_depth": 4
+}
+</script>
+
+
+</body>
 </html>
